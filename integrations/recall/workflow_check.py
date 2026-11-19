@@ -1,17 +1,21 @@
 """Four-component acceptance test. All input, state, archives and sockets are test-owned."""
 
+from contextlib import closing
 import fcntl
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import subprocess
 import sys
 import threading
 
 import pytest
 
+from ai_session_export.markdown import render_markdown
+from ai_session_export.models import MessageTurn, SessionRecord
 from ai_session_export.sources.codex import zstd
 
 
@@ -107,6 +111,83 @@ def refresh_args(device, provider):
             "--cache-dir", device / "cache", *provider]
 
 
+@pytest.fixture
+def readonly_note(tmp_path):
+    folder = tmp_path / "Drive" / "M1" / "archive"
+    folder.mkdir(parents=True)
+    note = folder / "workshop.md"
+    session = SessionRecord("codex", SESSION, "Workshop", "2026-01-15", [MessageTurn("assistant", DECISION)])
+    note.write_text(render_markdown(session), encoding="utf-8")
+    note.chmod(0o444)
+    folder.chmod(0o555)
+    try:
+        yield note
+    finally:
+        folder.chmod(0o755)
+        note.chmod(0o644)
+
+
+def sqlite_read_error(db):
+    # SQLite may return different extended codes for the same filesystem layout.
+    with pytest.raises(sqlite3.Error) as error:
+        with closing(sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True)) as conn:
+            conn.execute("SELECT key, value FROM meta").fetchall()
+    return f"{error.value.sqlite_errorname}: {error.value}"
+
+
+def test_readonly_archive_and_local_wal_cache(tmp_path, readonly_note, endpoint):
+    provider, seen = endpoint
+    cache = tmp_path / "M4" / "recall"
+    args = ["--archive", readonly_note.parent, "--cache-dir", cache, *provider]
+    assert cli(tmp_path, "index", *args)["files_updated"] == 1
+    seen.clear()
+    cache.chmod(0o500)
+    try:
+        if os.access(cache, os.W_OK):
+            pytest.skip("running user can bypass directory write permissions")
+        failed = cli(tmp_path, "find", *args, "--query", QUESTION, check=False)
+        assert failed.returncode and seen == []
+        db = cache / "index.sqlite3"
+        assert str(db) in failed.stderr and sqlite_read_error(db) in failed.stderr
+        assert "--cache-dir" in failed.stderr
+    finally:
+        cache.chmod(0o700)
+
+    packet = cli(tmp_path, "find", *args, "--query", QUESTION)
+    assert packet["method"] == "semantic" and seen == [QUESTION]
+    hit, = packet["evidence"]
+    assert Path(hit["file"]) == readonly_note and hit["quote"] == DECISION
+    assert readonly_note.read_text(encoding="utf-8").splitlines()[hit["line"] - 1] == DECISION
+
+
+@pytest.mark.parametrize(("command", "layout"), [
+    ("index", "missing-table"),
+    ("find", "missing-table"),
+    ("find", "directory"),
+    ("find", "invalid-file"),
+])
+def test_cache_diagnostics(tmp_path, readonly_note, command, layout):
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    db = cache / "index.sqlite3"
+    if layout == "missing-table":
+        with closing(sqlite3.connect(db)) as conn:
+            conn.execute("CREATE TABLE unrelated (id INTEGER)")
+    elif layout == "directory":
+        db.mkdir()
+    else:
+        db.write_bytes(b"This synthetic file is not a database.")
+    args = ["--archive", readonly_note.parent, "--cache-dir", cache,
+            "--base-url", "http://127.0.0.1:1/v1", "--model", "fixture-vectors"]
+    if command == "find":
+        args.extend(["--query", QUESTION])
+    result = cli(tmp_path, command, *args, check=False)
+    assert result.returncode and str(db) in result.stderr
+    assert sqlite_read_error(db) in result.stderr
+    if layout != "directory":
+        assert "--cache-dir" not in result.stderr
+
+
 def test_cross_device_recall_in_a_fresh_process(tmp_path, endpoint):
     provider, seen = endpoint
     first, second = tmp_path / "M1", tmp_path / "M4"
@@ -137,6 +218,7 @@ def test_cross_device_recall_in_a_fresh_process(tmp_path, endpoint):
     unindexed = cli(tmp_path, "find", *scope, "--cache-dir", missing_cache,
                     *provider, "--query", QUESTION, check=False)
     assert unindexed.returncode and not missing_cache.exists() and seen == []
+    assert "v2 cache database missing" in unindexed.stderr
 
     guide = Path(os.environ["CONTEXT_ARCHIVE_GUIDE"]).resolve(strict=True)
     search = ["find", *scope, "--cache-dir", second / "cache", *provider, "--query", QUESTION]
