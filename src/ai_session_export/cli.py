@@ -469,3 +469,7 @@ def main() -> None:
                     print(f"[{source}] {detail}: {warning['error']}", file=sys.stderr)
     if any(int(result.get("failed", 0)) for result in results):
         raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

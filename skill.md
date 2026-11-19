@@ -14,6 +14,7 @@ archive for browsing, semantic search, and downstream workflows.
 ## When To Use
 
 - Export or sync AI session history into Markdown files
+- Retrieve a past Codex decision from authorized archives with its source line using the [recall workflow](docs/recall.md)
 - Backfill sessions from a specific date
 - Integrate with a periodic/cron job for daily incremental export
 - Add a new session source adapter

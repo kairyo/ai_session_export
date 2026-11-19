@@ -2,6 +2,8 @@
 
 Export AI coding session transcripts from multiple tools into a unified Markdown archive for browsing, search, and downstream workflows.
 
+To retrieve a previous Codex decision in a new chat, use the optional [cross-device recall workflow](docs/recall.md). A lookup returns the session title, date, a verbatim passage and its current file and line number. The walkthrough runs entirely on synthetic input.
+
 ## Supported Sources
 
 | Source | Data Location |

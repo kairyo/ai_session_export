@@ -2,6 +2,8 @@
 
 ### 2026-11-19
 
+- Added an optional Codex recall workflow across device-owned archives. One-shot child processes export and index. A fresh reader follows the pinned archive guide and returns passages verified against the current Markdown and physical line numbers. The synthetic acceptance suite includes a stale passage, duplicates, scope changes and a failed refresh followed by repair.
+
 - Added streaming Codex `.jsonl.zst` reads in the active and archived roots. Plain and compressed representations of the same rollout use one parser and one archive. Decoding failures preserve the previous Markdown and incremental cursor.
 - Synthetic CLI regressions cover equivalent Markdown, multiple frames, representation changes at the same mtime, date filtering, dry runs and repair. The fork's two-Mac handoff is documented in `AGENTS.md`.
 
