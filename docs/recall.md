@@ -45,6 +45,16 @@ ai-session-recall index --archive "$M1/archive/codex" --archive "$M4/archive/cod
   --cache-dir "$LOCAL/recall" --base-url "$EMBED_URL" --model "$MODEL"
 ```
 
+### M4 检索权限 / M4 reader permissions
+
+在 M4 上运行 `index` 或 `find` 时，给 Codex 会话读取 Drive 归档目录和 Markdown 文件的权限即可。把 `--cache-dir` 指向 Drive 以外的本机目录，例如 `$LOCAL/recall`，并允许该会话在目录中读写文件。即使 `find` 只查询已有索引，SQLite 的 WAL 模式也可能需要在 `index.sqlite3` 旁创建或更新 `-wal` 和 `-shm` 文件。
+
+缓存出错时，查看标准错误中的数据库路径、SQLite 错误码和原始消息。遇到 `SQLITE_CANTOPEN` 或 `SQLITE_READONLY` 系列错误，先核对 `--cache-dir` 的路径和当前 Codex 会话对该目录的实际写权限，然后重试原查询。若显示 `SQLITE_ERROR: no such table: meta`，说明数据库已打开，但缺少索引的元数据表。请核对是否选中了由 `ai-session-recall index` 建立的缓存。
+
+On M4, give the Codex chat read-only access to the Drive archive directories and Markdown files for both `index` and `find`. Point `--cache-dir` to a local directory outside Drive, such as `$LOCAL/recall`, and allow the chat to read and write files there. Even when `find` only queries an existing index, SQLite in WAL mode may need to create or update the `-wal` and `-shm` files next to `index.sqlite3`.
+
+On a SQLite failure, stderr shows the database path, SQLite result code and original message. For `SQLITE_CANTOPEN` or a `SQLITE_READONLY` error, check the `--cache-dir` path and the running chat's effective write access, then retry the same query. `SQLITE_ERROR: no such table: meta` means the database opened but lacks the index metadata table. Check that you selected the cache built by `ai-session-recall index`.
+
 ## Use the evidence in the next chat
 
 For a title, project, date or session ID, a literal lookup works with just `--archive` and `--query`. Add `--term` for a remembered spelling or alias. For a paraphrase, pass the same cache and model used during indexing. Choose only the archive roots relevant to the question.

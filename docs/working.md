@@ -2,6 +2,9 @@
 
 ### 2026-11-19
 
+- #3 补充了 M4 对 Drive 归档的只读权限和本机 WAL 缓存目录的读写权限。检索与建索引遇到 SQLite 错误时会显示数据库路径、错误码和原始消息。
+- #3 documents M4's read-only Drive archive and writable local WAL cache. Queries and index builds now report the database path, SQLite result code and original message on SQLite failures.
+
 - Added an optional Codex recall workflow across device-owned archives. One-shot child processes export and index. A fresh reader follows the pinned archive guide and returns passages verified against the current Markdown and physical line numbers. The synthetic acceptance suite includes a stale passage, duplicates, scope changes and a failed refresh followed by repair.
 
 - Added streaming Codex `.jsonl.zst` reads in the active and archived roots. Plain and compressed representations of the same rollout use one parser and one archive. Decoding failures preserve the previous Markdown and incremental cursor.

@@ -160,13 +160,16 @@ def semantic(args, paths, command, extra=()):
         manifest = Path(temp) / "files.txt"
         manifest.write_text("".join(f"{path}\n" for path in paths), encoding="utf-8")
         proc = subprocess.run(
-            [sys.executable, "-m", "semantic_search_skill.cli", "--env-file", os.devnull,
+            [sys.executable, "-m", "ai_session_export._recall_semantic",
              "--base-url", args.base_url, "--model", args.model, command, "--file-list", str(manifest),
              "--cache-dir", str(args.cache_dir), *extra],
             env=env, capture_output=True, text=True, timeout=1800 if command == "rebuild" else 60,
         )
     if proc.returncode:
-        raise ValueError(f"semantic-search {command} failed (exit {proc.returncode}): {proc.stderr.strip()[-650:]}")
+        stderr = proc.stderr.strip()
+        # Exit 2 ends with the cache diagnostic. Keep even a long database path intact.
+        detail = stderr.rpartition("\n")[-1] if proc.returncode == 2 else stderr[-650:]
+        raise ValueError(f"semantic-search {command} failed (exit {proc.returncode}): {detail}")
     return json.loads(proc.stdout)
 
 
