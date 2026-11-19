@@ -8,7 +8,7 @@ Export AI coding session transcripts from multiple tools into a unified Markdown
 |---|---|
 | OpenCode | `~/.local/share/opencode/opencode.db` |
 | Claude Code | `~/.claude/projects/**/*.jsonl` |
-| Codex | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/*.jsonl` |
+| Codex | `rollout-*.jsonl` and `rollout-*.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` |
 | Google Antigravity 2.0 | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript_full.jsonl` |
 | Google Antigravity IDE | `~/.gemini/antigravity-ide/brain/*/.system_generated/logs/transcript_full.jsonl` |
 | Google Antigravity CLI | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` |
@@ -100,6 +100,15 @@ It drops subagent-child sessions and `<system-reminder>` instruction
 injections, tolerates torn trailing records (including a truncated final
 Zstandard frame), and rewrites one stable file per growing live session.
 Decompression shells out to the `zstd` binary.
+
+## Codex compressed history
+
+Python 3.14+ reads Zstandard rollouts with the standard library. For Python
+3.11–3.13, install `uv pip install -e '.[codex-zstd]'` in your environment.
+The development extra includes this decoder. Both formats are read locally
+and produce the same Markdown. When both copies of a rollout exist, the
+exporter uses the plain copy that Codex can resume. A corrupt or incomplete
+compressed file is reported on stderr and remains eligible for a later retry.
 
 ## Recovering a truncated Claude Code Remote session
 

@@ -21,6 +21,7 @@ import ai_session_export.cli as cli_module
 from ai_session_export.cli import DEFAULT_OPENCODE_DB, run_export
 from ai_session_export.markdown import render_markdown
 from ai_session_export.models import MessageTurn, SessionRecord
+from ai_session_export.sources import codex as codex_source
 from ai_session_export.sources.antigravity import (
     DEFAULT_ANTIGRAVITY_BRAIN_DIR,
     DEFAULT_ANTIGRAVITY_BRAIN_DIRS,
@@ -644,13 +645,15 @@ def _write_codex_session(session_dir: Path, index_file: Path, *, include_followu
     return session_file
 
 
-def _write_codex_item_completed_session(session_dir: Path, index_file: Path) -> Path:
+def _write_codex_item_completed_session(
+    session_dir: Path, index_file: Path, session_id: str = "codex-fixture-2"
+) -> Path:
     """Rollout in the current Codex format, where turns arrive as item_completed events."""
     session_dir.mkdir(parents=True, exist_ok=True)
     index_file.write_text(
         json.dumps(
             {
-                "id": "codex-fixture-2",
+                "id": session_id,
                 "thread_name": "Fixture Item Completed Task",
                 "updated_at": "2026-06-30T09:05:00Z",
             }
@@ -662,7 +665,7 @@ def _write_codex_item_completed_session(session_dir: Path, index_file: Path) -> 
         {
             "timestamp": "2026-06-30T09:00:00Z",
             "type": "session_meta",
-            "payload": {"id": "codex-fixture-2", "cwd": "/home/user/project"},
+            "payload": {"id": session_id, "cwd": "/home/user/project"},
         },
         {
             "timestamp": "2026-06-30T09:00:01Z",
@@ -707,7 +710,7 @@ def _write_codex_item_completed_session(session_dir: Path, index_file: Path) -> 
             },
         },
     ]
-    session_file = session_dir / "rollout-2026-06-30T09-00-00-codex-fixture-2.jsonl"
+    session_file = session_dir / f"rollout-2026-06-30T09-00-00-{session_id}.jsonl"
     session_file.write_text("\n".join(json.dumps(event) for event in events) + "\n", encoding="utf-8")
     return session_file
 
@@ -2169,6 +2172,130 @@ def test_codex_parses_item_completed_rollout_format(tmp_path: Path) -> None:
         "fixture-codex-model",
         "fixture-codex-model",
     ]
+
+
+def _codex_fixture_cli(root: Path, *flags: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable, "export_sessions.py", "--source", "codex",
+            "--codex-dir", str(root / "sessions"),
+            "--codex-dir", str(root / "archived_sessions"),
+            "--codex-session-index", str(root / "index.jsonl"),
+            "--base-dir", str(root / "output"), "--state-file", str(root / "state.json"),
+            *flags,
+        ],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True,
+    )
+
+
+def test_codex_zstd_cli_roundtrip_and_legacy_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    session_id = "00000000-0000-4000-8000-000000000011"
+    plain = _write_codex_item_completed_session(
+        tmp_path / "sessions" / "2026" / "06", tmp_path / "index.jsonl", session_id
+    )
+    data = plain.read_bytes().replace(b"Review the fixture project", "检查模拟项目".encode())
+    plain.write_bytes(data)
+    first = _codex_fixture_cli(tmp_path)
+    assert first.returncode == 0, first.stderr
+    archive, = (tmp_path / "output" / "codex").glob("*.md")
+    expected = archive.read_bytes()
+    assert "检查模拟项目".encode() in expected and b"private reasoning" not in expected
+
+    compressed = tmp_path / "archived_sessions" / (plain.name + ".zst")
+    compressed.parent.mkdir()
+    # Split mid-codepoint across two real frames. Text decoding must span frames.
+    split = data.index("检".encode()) + 1
+    compressed.write_bytes(codex_source.zstd.compress(data[:split]) + codex_source.zstd.compress(data[split:]))
+    os.utime(compressed, ns=(plain.stat().st_atime_ns, plain.stat().st_mtime_ns))
+    together = _codex_fixture_cli(tmp_path, "--full")
+    assert together.returncode == 0 and "exported=1 scanned=1" in together.stdout
+    assert archive.read_bytes() == expected
+    plain.unlink()
+
+    state_file = tmp_path / "state.json"
+    state = load_state(state_file)
+    # A state file from the pre-compression exporter contains neither field.
+    del state["codex"]["sessions"][session_id]["source_suffix"]
+    del state["codex"]["sessions"][session_id]["source_size"]
+    state_file.write_text(json.dumps(state))
+    excluded = _codex_fixture_cli(tmp_path, "--since-date", "2026-07-01")
+    assert excluded.returncode == 0 and "exported=0" in excluded.stdout
+    with compressed.open("ab") as stream:
+        extra = {"timestamp": "2026-06-30T10:00:00Z", "type": "event_msg",
+                 "payload": {"type": "agent_message", "message": "Synthetic follow-up"}}
+        stream.write(codex_source.zstd.compress((json.dumps(extra) + "\n").encode()))
+    mtime = state["codex"]["sessions"][session_id]["source_mtime_ns"]
+    os.utime(compressed, ns=(mtime, mtime))
+    dry = _codex_fixture_cli(tmp_path, "--dry-run")
+    assert dry.returncode == 0 and "exported=1 scanned=1" in dry.stdout
+    assert archive.read_bytes() == expected and load_state(state_file) == state
+    updated = _codex_fixture_cli(tmp_path)
+    assert updated.returncode == 0 and "exported=1 scanned=1" in updated.stdout
+    assert list(archive.parent.glob("*.md")) == [archive]
+    updated_bytes = archive.read_bytes()
+    assert b"Synthetic follow-up" in updated_bytes and "检查模拟项目".encode() in updated_bytes
+    assert load_state(state_file)["codex"]["sessions"][session_id]["source_suffix"] == ".zst"
+    # A fresh export of the original compressed-only session reproduces the plain Markdown.
+    compressed.write_bytes(codex_source.zstd.compress(data))
+    state_file.unlink()
+    archive.unlink()
+    fresh = _codex_fixture_cli(tmp_path)
+    assert fresh.returncode == 0 and "exported=1 scanned=1" in fresh.stdout
+    assert archive.read_bytes() == expected
+
+    # An unchanged compressed UUID must hit the mtime fast path without decoding.
+    monkeypatch.setattr(codex_source, "zstd", None)
+    unchanged = export_codex(
+        archive.parent, load_state(state_file), full=False, dry_run=False, since_date=None,
+        session_dirs=(compressed.parent,), session_index=tmp_path / "index.jsonl",
+    )
+    assert unchanged == {"source": "codex", "scanned": 1, "exported": 0}
+
+
+@pytest.mark.parametrize("bad_frame", [b"not a zstd frame", None], ids=["invalid", "truncated"])
+def test_codex_zstd_failure_preserves_archive_and_retries(tmp_path: Path, bad_frame: bytes | None) -> None:
+    session_id = "00000000-0000-4000-8000-000000000012"
+    plain = _write_codex_item_completed_session(tmp_path / "sessions", tmp_path / "index.jsonl", session_id)
+    compressed = plain.with_suffix(".jsonl.zst")
+    valid_frame = codex_source.zstd.compress(plain.read_bytes())
+    compressed.write_bytes(valid_frame)
+    plain.unlink()
+    first = _codex_fixture_cli(tmp_path)
+    assert first.returncode == 0, first.stderr
+    archive, = (tmp_path / "output" / "codex").glob("*.md")
+    before = archive.read_bytes()
+    state_file = tmp_path / "state.json"
+    before_entry = load_state(state_file)["codex"]["sessions"][session_id]
+    compressed.write_bytes(valid_frame + (bad_frame if bad_frame is not None else valid_frame[:-1]))
+    mtime = before_entry["source_mtime_ns"]
+    os.utime(compressed, ns=(mtime, mtime))
+    _write_codex_session(tmp_path / "sessions", tmp_path / "other-index.jsonl")
+    failed = _codex_fixture_cli(tmp_path)
+    assert failed.returncode == 1 and "exported=1 scanned=2 failed=1" in failed.stdout
+    assert "invalid or incomplete Zstandard rollout" in failed.stderr
+    assert archive.read_bytes() == before
+    assert load_state(state_file)["codex"]["sessions"][session_id] == before_entry
+    compressed.write_bytes(valid_frame)
+    repaired = _codex_fixture_cli(tmp_path)
+    assert repaired.returncode == 0 and "exported=0 scanned=2" in repaired.stdout
+    assert load_state(state_file)["codex"]["sessions"][session_id]["source_suffix"] == ".zst"
+
+
+def test_codex_missing_zstd_reports_once_and_keeps_plain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(codex_source, "zstd", None)
+    inputs = tmp_path / "sessions"
+    index = tmp_path / "index.jsonl"
+    plain = _write_codex_session(inputs, index)
+    (inputs / "rollout-one.jsonl.zst").touch()
+    (inputs / "rollout-two.jsonl.zst").touch()
+    (inputs / (plain.name + ".zst")).write_bytes(b"unused sibling")
+    (inputs / "rollout-temp.jsonl.zst.tmp").touch()
+    result = export_codex(tmp_path / "out", {}, full=True, dry_run=False, since_date=None,
+                          session_dirs=(inputs,), session_index=index)
+    assert (result["scanned"], result["exported"], result["failed"]) == (3, 1, 2)
+    warning, = result["warnings"]
+    assert "2 compressed rollout(s)" in warning["error"] and "codex-zstd" in warning["error"]
+
 
 def test_codex_export_with_fixture_and_incremental_update(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"

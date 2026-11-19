@@ -1,5 +1,10 @@
 ## Changelog
 
+### 2026-11-19
+
+- Added streaming Codex `.jsonl.zst` reads in the active and archived roots. Plain and compressed representations of the same rollout use one parser and one archive. Decoding failures preserve the previous Markdown and incremental cursor.
+- Synthetic CLI regressions cover equivalent Markdown, multiple frames, representation changes at the same mtime, date filtering, dry runs and repair. The fork's two-Mac handoff is documented in `AGENTS.md`.
+
 ### 2026-11-14
 
 - Issue #18: `claude_code._iter_jsonl()` decodes UTF-8 per physical line, recovers leading NUL padding, skips malformed JSON/non-object records, and records file/line diagnostics without transcript contents. Session parse failures are isolated; history JSONL uses the same reader.

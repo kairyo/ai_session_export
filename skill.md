@@ -21,7 +21,7 @@ archive for browsing, semantic search, and downstream workflows.
 ## Prerequisites
 
 - Python 3.11+
-- Dependencies: none beyond the standard library (sqlite3, json, pathlib)
+- The base install uses the Python standard library. For Codex `.jsonl.zst` on Python 3.11–3.13, install `uv pip install -e '.[codex-zstd]'`. Python 3.14+ supplies the decoder.
 - The DeepSeek Harness source needs the `zstd` binary on PATH for compressed session logs
 - For tests: `pytest` (install via `uv pip install -e '.[dev]'`)
 
@@ -224,7 +224,7 @@ whenever its backfill file changes, even if the local transcript did not.
 |---|---|---|
 | OpenCode | `~/.local/share/opencode/opencode.db` | SQLite |
 | Claude Code | `~/.claude/projects/**/*.jsonl` | JSONL |
-| Codex | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/*.jsonl` | JSONL |
+| Codex | `rollout-*.jsonl` and `rollout-*.jsonl.zst` under `~/.codex/sessions/` and `~/.codex/archived_sessions/` | Plain or Zstandard-compressed JSONL |
 | Antigravity 2.0 | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript_full.jsonl` (+ `conversation_summaries.db`, `annotations/*.pbtxt`) | JSONL + SQLite + Protobuf |
 | Antigravity IDE | `~/.gemini/antigravity-ide/brain/*/.system_generated/logs/transcript_full.jsonl` (+ `conversation_summaries.db`, `annotations/*.pbtxt`) | JSONL + SQLite + Protobuf |
 | Antigravity CLI | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` (+ `conversation_summaries.db`, `annotations/*.pbtxt`) | JSONL + SQLite + Protobuf |
