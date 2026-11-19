@@ -28,3 +28,25 @@ jobs:
       - name: Run tests
         run: |
           python -m pytest tests/ -v -m "not live_e2e"
+
+  recall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: grapeot/context-infrastructure
+          ref: 0bb2f6e11080702c9078bb1e1c65f3880d40c6cd
+          path: .recall-context
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned companion packages
+        run: python -m pip install -e '.[dev]' -r integrations/recall/requirements.txt
+      - name: Recall a synthetic decision in a fresh process
+        env:
+          CONTEXT_ARCHIVE_GUIDE: ${{ github.workspace }}/.recall-context/rules/skills/ai_session_search_archive.md
+          TZ: UTC
+        run: python -m pytest -q integrations/recall/workflow_check.py

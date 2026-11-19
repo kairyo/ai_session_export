@@ -1,0 +1,2 @@
+semantic-search-skill @ git+https://github.com/grapeot/semantic-search-skill.git@a3a6f64765871f9fa068b9856cb5158ef5daa827
+process-launcher @ git+https://github.com/grapeot/process-launcher.git@60ed57adce9d6082ddf27de270c49e7ff801c7e6
