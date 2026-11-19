@@ -34,7 +34,7 @@ The primary users are individual developers who run multiple AI coding agents lo
 1. **Deterministic output.** The same input session must always produce the same Markdown bytes.
 2. **No network access.** All parsing is local against files on disk.
 3. **Read-only on source data.** Adapters open databases read-only and never write back to source files.
-4. **Zero heavy dependencies.** The runtime depends only on the Python standard library; `pytest` is only needed for development.
+4. **Zero heavy dependencies.** The base install uses the Python standard library. On Python 3.11–3.13, the optional `codex-zstd` extra supplies the decoder for compressed Codex logs.
 5. **Python 3.11+.**
 6. **Public-repo safe.** Tests use only synthetic fixtures; no real emails, paths, or personal data are committed.
 7. **Extensible.** Adding a new source is a single adapter file plus registration in two places (see `AGENTS.md`).
@@ -52,7 +52,7 @@ The primary users are individual developers who run multiple AI coding agents lo
 |---|---|---|
 | OpenCode | `~/.local/share/opencode/opencode.db` (SQLite) | Per-session watermark: `opencode.sessions[session_id] = {"watermark": ms, "output_file": name}`; a run renders sessions whose message/part activity exceeds the watermark |
 | Claude Code | `~/.claude/projects/**/*.jsonl` plus history at `~/.claude/history.jsonl` | Per-session latest timestamp, stable output filename, recorded source mtime, and backfill-file mtime when one exists; existing archives are adopted by frontmatter identity on upgrade, including under `--full` |
-| Codex | `~/.codex/sessions/**/*.jsonl`, `~/.codex/archived_sessions/*.jsonl`, and `~/.codex/session_index.jsonl` | Per-session latest timestamp, output filename, and source mtime |
+| Codex | Plain `.jsonl` and compressed `.jsonl.zst` rollouts in active and archived session directories, plus `~/.codex/session_index.jsonl` | Per-session latest timestamp, output filename, source mtime, size and suffix |
 | Google Antigravity | `~/.gemini/antigravity/brain/*/.system_generated/logs/transcript_full.jsonl` (2.0), `~/.gemini/antigravity-ide/brain/*/...` (IDE), and `~/.gemini/antigravity-cli/brain/*/...` (CLI) | Per-surface, per-session source fingerprint, parse status, latest timestamp, and output filename |
 | Cursor | `~/Library/Application Support/Cursor/User/globalStorage/state.vscdb` (SQLite) | Per-session latest timestamp and output filename |
 | Second Mind | `second_mind_export.json` (a single JSON array export) | `second_mind.last_export_count` |
